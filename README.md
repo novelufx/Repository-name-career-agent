@@ -75,7 +75,19 @@ npm run dev
 
 ## 在线 Demo
 
-[在线体验](https://your-username.github.io/career-agent/)
+[在线体验](https://novelufx.github.io/career-agent/)
+
+## 部署到 GitHub Pages
+
+```bash
+# 构建并部署
+npm run build
+npm run deploy
+```
+
+部署后访问：https://novelufx.github.io/career-agent/
+
+注意：使用 HashRouter 替代 BrowserRouter，避免 GitHub Pages 刷新 404 问题。
 
 ## 项目文档
 

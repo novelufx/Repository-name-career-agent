@@ -9,7 +9,6 @@ import {
   Bot,
   Key,
   BookOpen,
-  Zap,
   Shield,
   GitBranch,
 } from "lucide-react";

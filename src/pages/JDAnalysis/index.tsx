@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FileText,
@@ -11,13 +11,43 @@ import {
 } from "lucide-react";
 import { sampleJDs, type JDAnalysisResult } from "../../mock/data";
 import { analyzeJD, getErrorMessage } from "../../services/aiService";
+import { useAppContext } from "../../context/AppContext";
+import { useWorkflow } from "../../context/WorkflowContext";
+import { classifyRole, getCategoryDisplayName } from "../../utils/roleClassifier";
+import WorkflowProgress from "../../components/WorkflowProgress";
 
 export default function JDAnalysis() {
-  const [jdText, setJdText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<JDAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
   const navigate = useNavigate();
+  const { dispatch } = useAppContext();
+  const {
+    state: wf,
+    setJdText,
+    setJdAnalysisResult,
+    setDetectedRole,
+    setRoleCategory,
+  } = useWorkflow();
+
+  // 从 WorkflowContext 恢复结果（在 wf 声明之后）
+  useEffect(() => {
+    if (wf.jdAnalysisResult && !result) {
+      setResult(wf.jdAnalysisResult);
+    }
+    // 恢复时重新运行分类，确保使用最新的分类逻辑
+    if (wf.jdText && wf.roleCategory) {
+      const fresh = classifyRole(wf.jdText);
+      if (fresh.roleCategory !== wf.roleCategory) {
+        setDetectedRole(fresh.detectedRole);
+        setRoleCategory(fresh.roleCategory);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const jdText = wf.jdText;
 
   const handleAnalyze = async () => {
     if (!jdText.trim()) return;
@@ -27,6 +57,14 @@ export default function JDAnalysis() {
 
     try {
       const data = await analyzeJD(jdText);
+
+      // 使用 roleClassifier 识别岗位
+      const classification = classifyRole(jdText);
+
+      dispatch({ type: "SET_JD_DATA", payload: data });
+      setJdAnalysisResult(data);
+      setDetectedRole(classification.detectedRole || data.jobTitle);
+      setRoleCategory(classification.roleCategory);
       setResult(data);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -46,12 +84,13 @@ export default function JDAnalysis() {
 
   return (
     <div className="max-w-6xl mx-auto">
+      <WorkflowProgress />
+
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">JD 解析</h1>
         <p className="text-gray-600">
           粘贴 JD，看看这个岗位到底要什么人
         </p>
-
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -153,6 +192,24 @@ export default function JDAnalysis() {
                 </p>
                 <p className="text-blue-600 text-sm mt-1">
                   {result.salaryRange}
+                </p>
+              </div>
+
+              {/* 识别结果 */}
+              {wf.detectedRole && (
+                <div className="bg-indigo-50 p-3 rounded-lg flex items-center gap-3">
+                  <span className="text-sm text-indigo-600 font-medium">识别岗位：</span>
+                  <span className="text-sm text-indigo-900 font-semibold">{wf.detectedRole}</span>
+                  <span className="text-xs text-indigo-500">
+                    分类：{getCategoryDisplayName(wf.roleCategory)}
+                  </span>
+                </div>
+              )}
+
+              {/* 提示信息 */}
+              <div className="bg-green-50 p-3 rounded-lg">
+                <p className="text-sm text-green-700">
+                  这份 JD 解析结果会自动用于后续简历诊断、项目优化和模拟面试。
                 </p>
               </div>
 
@@ -264,7 +321,6 @@ export default function JDAnalysis() {
                 <FileText className="w-16 h-16 mx-auto mb-4 opacity-30" />
                 <p className="text-lg mb-2">粘贴 JD 开始分析</p>
                 <p className="text-sm">支持任意格式，直接粘贴就行</p>
-
               </div>
             </div>
           )}

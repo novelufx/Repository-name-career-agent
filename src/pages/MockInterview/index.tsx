@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   MessageSquare,
@@ -12,16 +12,19 @@ import {
   Lightbulb,
   AlertCircle,
 } from "lucide-react";
-import { sampleJDs, sampleResumes, mockJDAnalysis } from "../../mock/data";
+import { sampleJDs, sampleResumes } from "../../mock/data";
 import {
   generateInterviewQuestions,
   getErrorMessage,
+  analyzeJD,
 } from "../../services/aiService";
+import { useAppContext } from "../../context/AppContext";
+import { useWorkflow } from "../../context/WorkflowContext";
+import { extractResumeSummary } from "../../utils/extractResumeSummary";
 import type { InterviewQuestion } from "../../mock/data";
+import WorkflowProgress from "../../components/WorkflowProgress";
 
 export default function MockInterview() {
-  const [jdText, setJdText] = useState("");
-  const [resumeText, setResumeText] = useState("");
   const [isStarted, setIsStarted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
@@ -31,17 +34,45 @@ export default function MockInterview() {
   const [showHint, setShowHint] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { state, dispatch } = useAppContext();
+  const {
+    state: wf,
+    setJdText,
+    setResumeSummary,
+  } = useWorkflow();
+
+  const jdText = wf.jdText;
+  const resumeSummary = wf.resumeSummary;
+
+  // 如果 resumeSummary 不存在，从 resumeText 生成
+  useEffect(() => {
+    if (!wf.resumeSummary && wf.resumeText) {
+      const summary = extractResumeSummary(wf.resumeText);
+      if (summary) {
+        setResumeSummary(summary);
+      }
+    }
+  }, [wf.resumeText, wf.resumeSummary, setResumeSummary]);
+
+  // Sync interview answers to global context for feedback report
+  useEffect(() => {
+    if (questions.length > 0) {
+      dispatch({ type: "SET_INTERVIEW_DATA", payload: { questions, answers } });
+    }
+  }, [answers, questions, dispatch]);
 
   const handleStart = async () => {
-    if (!jdText.trim() || !resumeText.trim()) return;
+    if (!jdText.trim() || !resumeSummary.trim()) return;
     setIsLoading(true);
     setError(null);
 
     try {
-      const data = await generateInterviewQuestions(
-        resumeText,
-        mockJDAnalysis
-      );
+      const jdData = (state.workflow.jdData as any) || await analyzeJD(jdText);
+      if (!state.workflow.jdData) {
+        dispatch({ type: "SET_JD_DATA", payload: jdData });
+      }
+      const data = await generateInterviewQuestions(resumeSummary, jdData);
+      dispatch({ type: "SET_INTERVIEW_DATA", payload: { questions: data, answers: {} } });
       setQuestions(data);
       setIsStarted(true);
     } catch (err) {
@@ -53,10 +84,7 @@ export default function MockInterview() {
 
   const handleSubmitAnswer = () => {
     if (!currentAnswer.trim()) return;
-    setAnswers((prev) => ({
-      ...prev,
-      [questions[currentIndex].question]: currentAnswer,
-    }));
+    setAnswers((prev) => ({ ...prev, [questions[currentIndex].question]: currentAnswer }));
     setCurrentAnswer("");
     if (currentIndex < questions.length - 1) {
       setCurrentIndex((prev) => prev + 1);
@@ -66,7 +94,7 @@ export default function MockInterview() {
 
   const handleFillSample = () => {
     setJdText(sampleJDs.aiProduct);
-    setResumeText(sampleResumes.product);
+    setResumeSummary(extractResumeSummary(sampleResumes.product));
     setError(null);
   };
 
@@ -94,6 +122,8 @@ export default function MockInterview() {
 
   return (
     <div className="max-w-6xl mx-auto">
+      <WorkflowProgress />
+
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">模拟面试</h1>
         <p className="text-gray-600">
@@ -118,6 +148,15 @@ export default function MockInterview() {
               </button>
             </div>
 
+            {/* 提示信息 */}
+            {(jdText.trim() || resumeSummary.trim()) && (
+              <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-700">
+                  已自动带入前面填写的 JD 和简历摘要，可手动调整后开始模拟面试。
+                </p>
+              </div>
+            )}
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -139,9 +178,9 @@ export default function MockInterview() {
                   你的简历摘要
                 </label>
                 <textarea
-                  value={resumeText}
+                  value={resumeSummary}
                   onChange={(e) => {
-                    setResumeText(e.target.value);
+                    setResumeSummary(e.target.value);
                     setError(null);
                   }}
                   placeholder="粘贴你的简历内容或关键经历..."
@@ -160,7 +199,7 @@ export default function MockInterview() {
             <button
               type="button"
               onClick={handleStart}
-              disabled={!jdText.trim() || !resumeText.trim() || isLoading}
+              disabled={!jdText.trim() || !resumeSummary.trim() || isLoading}
               className="btn-primary w-full mt-4 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (

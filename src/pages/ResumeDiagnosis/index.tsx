@@ -1,5 +1,7 @@
-import { useState } from "react";
+﻿import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAppContext } from "../../context/AppContext";
+import { useWorkflow } from "../../context/WorkflowContext";
 import {
   UserCheck,
   ArrowRight,
@@ -9,17 +11,35 @@ import {
   Sparkles,
   BarChart3,
 } from "lucide-react";
-import { sampleJDs, sampleResumes, mockJDAnalysis } from "../../mock/data";
-import { diagnoseResume, getErrorMessage } from "../../services/aiService";
-import type { ResumeDiagnosisResult } from "../../mock/data";
+import { sampleJDs, sampleResumes } from "../../mock/data";
+import { diagnoseResume, getErrorMessage, analyzeJD } from "../../services/aiService";
+import type { ResumeDiagnosisResult, JDAnalysisResult } from "../../mock/data";
+import WorkflowProgress from "../../components/WorkflowProgress";
 
 export default function ResumeDiagnosis() {
-  const [jdText, setJdText] = useState("");
-  const [resumeText, setResumeText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ResumeDiagnosisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
   const navigate = useNavigate();
+  const { state, dispatch } = useAppContext();
+  const {
+    state: wf,
+    setJdText,
+    setResumeText,
+    setResumeDiagnosisResult,
+  } = useWorkflow();
+
+  // 从 WorkflowContext 恢复结果（在 wf 声明之后）
+  useEffect(() => {
+    if (wf.resumeDiagnosisResult && !result) {
+      setResult(wf.resumeDiagnosisResult);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const jdText = wf.jdText;
+  const resumeText = wf.resumeText;
 
   const handleDiagnose = async () => {
     if (!jdText.trim() || !resumeText.trim()) return;
@@ -28,7 +48,13 @@ export default function ResumeDiagnosis() {
     setResult(null);
 
     try {
-      const data = await diagnoseResume(resumeText, mockJDAnalysis);
+      const jdData = (state.workflow.jdData as JDAnalysisResult) || await analyzeJD(jdText);
+      if (!state.workflow.jdData) {
+        dispatch({ type: "SET_JD_DATA", payload: jdData });
+      }
+      const data = await diagnoseResume(resumeText, jdData);
+      dispatch({ type: "SET_RESUME_DATA", payload: data });
+      setResumeDiagnosisResult(data);
       setResult(data);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -57,10 +83,11 @@ export default function ResumeDiagnosis() {
 
   return (
     <div className="max-w-6xl mx-auto">
+      <WorkflowProgress />
+
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">简历诊断</h1>
         <p className="text-gray-600">看看你的简历和目标岗位有多匹配</p>
-
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -85,6 +112,11 @@ export default function ResumeDiagnosis() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 目标岗位 JD
               </label>
+              {jdText.trim() && (
+                <p className="text-xs text-blue-600 mb-1">
+                  已自动带入上一步的 JD，可手动修改
+                </p>
+              )}
               <textarea
                 value={jdText}
                 onChange={(e) => {
@@ -137,6 +169,12 @@ export default function ResumeDiagnosis() {
               </>
             )}
           </button>
+
+          {resumeText.trim() && (
+            <p className="text-xs text-green-600 mt-2">
+              这份简历会自动用于后续项目优化和模拟面试。
+            </p>
+          )}
         </div>
 
         {/* 结果区域 */}

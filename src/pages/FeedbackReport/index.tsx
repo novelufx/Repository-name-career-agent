@@ -11,17 +11,25 @@ import {
   CheckCircle,
   Copy,
 } from "lucide-react";
-import { mockJDAnalysis, type FeedbackReportResult } from "../../mock/data";
+import type { FeedbackReportResult, JDAnalysisResult } from "../../mock/data";
 import {
   generateFeedbackReport,
   getErrorMessage,
 } from "../../services/aiService";
+import { useAppContext } from "../../context/AppContext";
+import { useWorkflow } from "../../context/WorkflowContext";
 
 export default function FeedbackReport() {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<FeedbackReportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { state, dispatch } = useAppContext();
+  const { state: wf } = useWorkflow();
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
 
   const handleGenerate = async () => {
     setIsLoading(true);
@@ -29,19 +37,61 @@ export default function FeedbackReport() {
     setResult(null);
 
     try {
-      const mockHistory = [
-        {
-          question: "请介绍一下你的项目经历",
-          answer: "我做了xx项目",
-          score: 75,
-        },
-        { question: "你对AI产品的理解", answer: "AI产品是...", score: 80 },
-      ];
+      // 从 context 获取真实数据
+      const workflow = state.workflow;
+
+      // JD 分析数据：优先使用已有的，否则无法在此页面重新分析（没有 JD 输入）
+      const jdData = workflow.jdData as JDAnalysisResult | null;
+      if (!jdData) {
+        setError("请先完成 JD 解析步骤，再生成反馈报告");
+        setIsLoading(false);
+        return;
+      }
+
+      // 简历文本：从 WorkflowContext 获取
+      const resumeText = wf.resumeText || "";
+
+      // 简历诊断和项目优化数据
+      const resumeDiagnosis = workflow.resumeData || null;
+      const projectOptimization = workflow.projectData || null;
+
+      // 面试记录：使用真实回答
+      const interviewData = workflow.interviewData as {
+        questions: Array<{ question: string }>;
+        answers: Record<string, string>;
+      } | null;
+
+      let interviewHistory: Array<{
+        question: string;
+        answer: string;
+        score: number;
+      }>;
+
+      if (interviewData && interviewData.questions && interviewData.answers) {
+        interviewHistory = interviewData.questions.map((q) => ({
+          question: q.question,
+          answer: interviewData.answers[q.question] || "(未回答)",
+          score: 70,
+        }));
+      } else {
+        // 没有面试数据时使用占位数据
+        interviewHistory = [
+          {
+            question: "请介绍一下你的项目经历",
+            answer: "(未找到面试记录，请先完成模拟面试步骤)",
+            score: 0,
+          },
+        ];
+      }
+
       const data = await generateFeedbackReport(
-        "",
-        mockJDAnalysis,
-        mockHistory
+        resumeText,
+        jdData,
+        resumeDiagnosis,
+        projectOptimization,
+        interviewHistory
       );
+      dispatch({ type: "SET_FEEDBACK_DATA", payload: data });
       setResult(data);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -75,7 +125,6 @@ export default function FeedbackReport() {
         <p className="text-gray-600">
           看看面试表现怎么样，哪里还能改进
         </p>
-
       </div>
 
       {!result ? (

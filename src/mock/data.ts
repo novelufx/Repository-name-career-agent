@@ -158,6 +158,7 @@ export const mockResumeDiagnosis: ResumeDiagnosisResult = {
 export interface ProjectOptimizationResult {
   original: string;
   bulletVersion: string;
+    jdMatchAnalysis?: string;
   starVersion: {
     situation: string;
     task: string;
@@ -176,6 +177,10 @@ export interface ProjectOptimizationResult {
     reason: string;
   }[];
   keywordsAdded: string[];
+  keywordSuggestions?: string[];
+  interviewerFollowUps?: string[];
+  dataSuggestions?: string[];
+  honestyWarnings?: string[];
 }
 
 export const mockProjectOptimization: ProjectOptimizationResult = {

@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Personal data
+岗位JD与我的简历.txt
+*.png
+screenshot-*.png
